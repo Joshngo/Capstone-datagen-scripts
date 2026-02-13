@@ -7,6 +7,12 @@ import random #For random number generation
 import time #For timers and clock control
 import threading #For multithreading sensors
 
+import asyncio
+import websockets
+
+finalData = []
+dataLock = threading.Lock()
+
 #Class for a sensor object
 #Name : Sensor's Name
 #Data : Data in the form of a list (Might not be used)
@@ -14,7 +20,7 @@ import threading #For multithreading sensors
 class Sensor:
     def __init__(self, name, data, interval, dataunit=None):
         self.name = name    #Sensor Name
-        self.data = data    #Data array if needed later
+        self.data = data    #Data array if needed later, this is currently unused. It is empty for each sensor created as of now.
         self.interval = interval    #The interval of the timer
         self.dataunit = dataunit    #Unit of data for this sensor
         self.running = False        #State of the sensor
@@ -22,7 +28,7 @@ class Sensor:
     #Start the thread for this sensor
     def start(self):
         self.running = True     #Flag for running process
-        self.thread = threading.Thread(target=self._generate)
+        self.thread = threading.Thread(target=self._generate)   #When a sensor starts up, it must start generating data right away.
         self.thread.start()     #Start the thread
         print("Sensor thread " + self.name + " is now running successfully")
 
@@ -30,23 +36,42 @@ class Sensor:
     def stop(self):
         self.running = False #Flag for running process
         if self.thread:
-            # self.thread.join()  #This is ensure that the thread exits properly
             print("Sensor thread " + self.name + " has successfully stopped.")
+        # self.thread.join()  #This is ensure that the thread exits properly, causes issues with stopping the program, so it is commented out for now.
 
     #Generate the data
     def _generate(self):
         while self.running:
-            formatData(self)
+            data = formatData(self) #Get a piece of data from the sensor
+            with dataLock:  #Use the lock to make sure that this operation doesn't get race condition'd
+                finalData.append(data)
+            time.sleep(self.interval) #Halts the program in regards to the interval
+            
 
 
 
 #This function will generate fake data and sensors at a fast rate.
-#Returns : 
-def generateData():
+# variance : The value that will determine the variance in data for each random number generator
+# Returns : randomized data value
+def generateData(variance=7):
     # test = random.randrange(1,16336)    #Random number, does not include the endpoint
-    temp = (20 + random.random() * 7)
+    temp = (20 + random.random() * variance)
     return temp
 
+#This function will start all the sensors
+# sensorsList : The list of sensors to start
+def startSensors(sensorsList):
+    for sens in sensorsList:
+        try:
+            sens.start()    #Start all the sensors
+        except:
+            print("Error starting sensor.")
+
+#This function will stop all the sensors.
+# sensorsList : The list of sensors to stop
+def stopSensors(sensorsList):
+    for sens in sensorsList:
+            sens.stop() #Stop all sensors
 
 #This function will format the data from a sensor and return it in a printable format
 #Note, in the GBTAC data, there is no unit involved. So, the unit parameter might not exist.
@@ -56,10 +81,11 @@ def formatData(sensor):
     #Set values 
     sensorData = sensor.data
     unit = sensor.dataunit
-    name = sensor.name
-    running = sensor.running
-    interval = sensor.interval
+    name = sensor.name          #Sensor name
+    running = sensor.running    #If the sensor is running
+    interval = sensor.interval  #The interval in which the sensor should print data
 
+    #String formatting
     nameHeader = f"Sensor Name: {name}"
     div = f"="*35
 
@@ -67,64 +93,81 @@ def formatData(sensor):
     print(div)
     print(nameHeader)
 
-    while running:
-        running = sensor.running
+    while running:  #This loop should only run when the sensors are running
         dataSample = generateData()
 
-        print(name + " " + str(dataSample)) #PUBLISH SINGLE HERE
+        data = (name + " " + str(dataSample))
+        print(data) #PUBLISH SINGLE HERE
+        return data
         
-        time.sleep(interval)
-    
-    print(div+"\n")
+        # time.sleep(interval) #Halts the program in regards to the interval
+        # running = sensor.running #Update the thread's status 
 
-
-#Hard coded sensors
-sens1 = Sensor("SolarLab1_30000_TL60" , [] , 1 , "")
-sens2 = Sensor("SolarLab2_30000_TL61" , [] , 2 , "")
-sens3 = Sensor("SolarLab3_30000_TL63" , [] , 3 , "")
-sens4 = Sensor("TempLab4_30000_TL67", [] , 4 , "Celsius" )
-
-
-energySensors = []
-
-occupancySensors = []
-
-#TODO: Change the interval for sensors. Just change the interval value every few sensors
 
 def createSensors(sensorCount, sensorType,):
-    number = 0
-    tl = 60
-    arr = []
+    number = 0  #Sensor number
+    tl = 60 #Tl number
+    arr = []    #Array of sensors
     for index in range(sensorCount):
-        tempSens = Sensor("SolarLab" + str(number) + "_30000_TL" + str(tl) , [] , 4)
+        randInterval = random.randint(1,4)  #Generate a random interval for sensors for randomness
+        tempSens = Sensor(sensorType + str(number) + "_30000_TL" + str(tl) , [] , randInterval)
         arr.append(tempSens)
         number += 1
         tl += 1
     return arr #Array of sensors
 
+async def sendData(websocket):
+    print(f"Client has connected. Sending data.")
+
+    while True:
+        with dataLock:
+            await websocket.send("Hello world!")
+        await asyncio.sleep(3)
+
 
 
 #Main function
-def main():
+async def main():
+    sensorsList = []    #List of all sensors
 
-    tempSensors = createSensors(25,"Temp")
-    runTime = 20
+    solarSensors = createSensors(20,"SolarLab")  #Create sensors with a label of SolarLab
+    # tempSensors = createSensors(20, "TemperatureLabs")  #Create sensors with label of TemperatureLabs
+    # occupancySensors = createSensors(25, "Occupancy")
 
-    for sens in tempSensors:
-        sens.start()
+    runTime = 51  #How long the program should run for
 
-    time.sleep(runTime)
+    #Combine the sensors into one large list
+    sensorsList.extend(solarSensors)
+    # sensorsList.extend(tempSensors)
+    # sensorsList.extend(occupancySensors)
 
-    for sens in tempSensors:
-        sens.stop()
+    #Function to start all the sensors
+    startSensors(sensorsList)
 
-    # sens1.start()
-    # sens2.start()
-    # sens3.start()
-    # time.sleep(runTime)
-    # sens1.stop()
-    # sens2.stop()
-    # sens3.stop()
+    # async with websockets.serve(sendData, "0.0.0.0", 9000):
+    #     print("Server started. Awaiting connection.")
+    #     await asyncio.Future()
 
-main()
+
+    #This try-except clause is to help with program stoppage if needed.
+    try:
+        #Let the threads run while the main function sleeps for the runtime amount
+        async with websockets.serve(sendData, "0.0.0.0", 9000):
+            print("Server started. Awaiting connection.")
+            await asyncio.sleep(runTime)
+    except KeyboardInterrupt:   #If a keyboard interrupt is noticed, exit the entire program.
+        print("\nForce stopping the program!\n")
+    finally:    #Cleanup crew with function to stop all sensors
+        with dataLock:
+            stopSensors(sensorsList)
+        # for i in finalData:
+        #     print(i)
+
+
+#Run the main function, which essentially handles the whole program
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("Server Stopping")    #Might not need this try except block, but is good practice
+
 
