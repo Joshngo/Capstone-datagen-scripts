@@ -6,9 +6,11 @@
 import random #For random number generation
 import time #For timers and clock control
 import threading #For multithreading sensors
+from datetime import datetime #For timestamping
 
 import asyncio
 import websockets
+import json
 
 finalData = []
 dataLock = threading.Lock()
@@ -84,6 +86,9 @@ def formatData(sensor):
     name = sensor.name          #Sensor name
     running = sensor.running    #If the sensor is running
     interval = sensor.interval  #The interval in which the sensor should print data
+    
+    time = datetime.now()
+    timestamp = time.strftime("%H:%M:%S")
 
     #String formatting
     nameHeader = f"Sensor Name: {name}"
@@ -96,7 +101,8 @@ def formatData(sensor):
     while running:  #This loop should only run when the sensors are running
         dataSample = generateData()
 
-        data = (name + " " + str(dataSample))
+        data = (timestamp + " " + name + " " + str(dataSample))
+
         print(data) #PUBLISH SINGLE HERE
         return data
         
@@ -116,13 +122,17 @@ def createSensors(sensorCount, sensorType,):
         tl += 1
     return arr #Array of sensors
 
+#This function sends data to the client
+#Websocket : the websocket that is connected
 async def sendData(websocket):
     print(f"Client has connected. Sending data.")
 
+    #Runs no matter what
     while True:
-        with dataLock:
-            await websocket.send("Hello world!")
-        await asyncio.sleep(3)
+        with dataLock:  #Make sure lock the data
+            await websocket.send(json.dumps(finalData))
+            finalData.clear() #Clear the array, we don't want to send duplicate data.
+        await asyncio.sleep(2)  #Sleep for two seconds, let the program run
 
 
 
@@ -134,7 +144,7 @@ async def main():
     # tempSensors = createSensors(20, "TemperatureLabs")  #Create sensors with label of TemperatureLabs
     # occupancySensors = createSensors(25, "Occupancy")
 
-    runTime = 51  #How long the program should run for
+    runTime = 10  #How long the program should run for
 
     #Combine the sensors into one large list
     sensorsList.extend(solarSensors)
@@ -143,11 +153,6 @@ async def main():
 
     #Function to start all the sensors
     startSensors(sensorsList)
-
-    # async with websockets.serve(sendData, "0.0.0.0", 9000):
-    #     print("Server started. Awaiting connection.")
-    #     await asyncio.Future()
-
 
     #This try-except clause is to help with program stoppage if needed.
     try:
