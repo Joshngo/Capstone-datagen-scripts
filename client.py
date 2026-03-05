@@ -11,8 +11,6 @@ async def main():
     async with websockets.connect("ws://localhost:9000") as websocket:  #Attempt to connect with the server
         await websocket.send("Hello Server!")   #Confirmation message
 
-        # response = await websocket.recv()   #Wait for 
-
         #NOTE: This block of code could potentially cause problems if the information coming in is too large, if that happens, we will need to multithread this.
         try:
             while True:
@@ -20,10 +18,12 @@ async def main():
                 data = json.loads(response)         #The data will be formatted back into array form
                 print(data)                         #For debugging
                 allData = allData + data
+                publishData(allData)
         except:
             print("Connection closed")  #This except clause is essential, because when the connection closes we don't want to throw and exception and break the program execution
 
     writeCsv(allData)   #Write all the data to the csv file
+    publishData(allData)
 
 #This function will take an array of strings, (The Data) and write it to a csv file
 #inputData : The array of strings (our data)
@@ -36,14 +36,23 @@ def writeCsv(inputData):
 
         #For each entry, we must split the strings by the spaces and extract the proper information
         for entry in copyData:
-            splitStr = entry.split(" ")
-            timestamp = splitStr[0]
-            name = splitStr[1]
-            value = splitStr[2]
+            splitStr = entry.split(",")
+            # timestamp = splitStr[0]
+            # name = splitStr[1]
+            # value = splitStr[2]
 
-            print(f"{timestamp} {name} {value}") #For debugging purposes
+            name = splitStr[0]
+            value = splitStr[1]
 
-            writer.writerow([timestamp, name, value]) #Write the row to the csv file
+            print(f"{name} {value}") #For debugging purposes
 
+            writer.writerow([name, value]) #Write the row to the csv file
+
+def publishData(allData):
+    for entry in allData:
+        splitStr = entry.split(",")
+        name = splitStr[0]
+        value = splitStr[1]
+        print(f"sensors/zoneA/{name} {value}")
 
 asyncio.run(main())
