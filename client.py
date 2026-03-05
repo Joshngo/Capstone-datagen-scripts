@@ -4,6 +4,7 @@ import asyncio
 import websockets
 import json
 import csv
+import paho.mqtt.publish as publish
 
 async def main():
 
@@ -23,7 +24,7 @@ async def main():
             print("Connection closed")  #This except clause is essential, because when the connection closes we don't want to throw and exception and break the program execution
 
     writeCsv(allData)   #Write all the data to the csv file
-    publishData(allData)
+    # publishData(allData)
 
 #This function will take an array of strings, (The Data) and write it to a csv file
 #inputData : The array of strings (our data)
@@ -51,8 +52,10 @@ def writeCsv(inputData):
 def publishData(allData):
     for entry in allData:
         splitStr = entry.split(",")
-        name = splitStr[0]
-        value = splitStr[1]
-        print(f"sensors/zoneA/{name} {value}")
+        prefix = "sensors/zoneA/"
+        topic = "sensors/zoneA"+splitStr[0]
+        dataSample = splitStr[1]
+        print(f"{topic} {dataSample}")
+        # publish.single(topic, dataSample, hostname="localhost")   #Comment out line 58, and then uncomment this line(59) to test with MQTT
 
 asyncio.run(main())
